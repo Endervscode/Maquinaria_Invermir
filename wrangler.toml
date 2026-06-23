@@ -1,0 +1,14 @@
+# =============================================================================
+# Cloudflare Pages configuration
+# Deploy with: npx wrangler pages deploy out/
+# =============================================================================
+name = "control-maquinaria"
+
+[build]
+command = "bun run build"
+pages_build_output_dir = "out"
+
+[env.production]
+# Variables de entorno para Supabase (configurar en Cloudflare Dashboard)
+# NEXT_PUBLIC_SUPABASE_URL = "https://your-project.supabase.co"
+# NEXT_PUBLIC_SUPABASE_ANON_KEY = "your-anon-key"
