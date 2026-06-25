@@ -150,8 +150,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async ({ cedula, nombre, role = "empleado" }) => {
       try {
         const cleanCedula = cedula.trim();
-        if (!cleanCedula) return { ok: false, error: "Cédula requerida" };
-        if (!nombre.trim()) return { ok: false, error: "Nombre requerido" };
+        if (!cleanCedula) return { ok: false, error: "La cédula es obligatoria" };
+        if (!/^\d{6,10}$/.test(cleanCedula)) return { ok: false, error: "La cédula debe tener entre 6 y 10 dígitos numéricos" };
+        if (!nombre.trim()) return { ok: false, error: "El nombre es obligatorio" };
+        if (nombre.trim().length < 3) return { ok: false, error: "El nombre debe tener al menos 3 caracteres" };
 
         const existing = await getByIndex<Usuario>("usuarios", "by-cedula", cleanCedula);
         if (existing.length > 0) return { ok: false, error: "Ya existe un usuario con esa cédula" };

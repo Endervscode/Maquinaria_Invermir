@@ -49,6 +49,8 @@ export function UsuariosTab() {
   const [role, setRole] = useState<Role>("empleado");
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{ cedula?: string; nombre?: string }>({});
+  const [touched, setTouched] = useState<{ cedula?: boolean; nombre?: boolean }>({});
 
   const refresh = async () => setUsers(await getAll<Usuario>("usuarios"));
   useEffect(() => { refresh(); }, []);
@@ -60,7 +62,38 @@ export function UsuariosTab() {
     u.email.toLowerCase().includes(search.toLowerCase())
   );
 
+  function validateField(field: "cedula" | "nombre", value: string): string | undefined {
+    if (field === "cedula") {
+      if (!value.trim()) return "La cédula es obligatoria";
+      if (!/^\d{6,10}$/.test(value.trim())) return "Ingrese una cédula válida (6-10 dígitos)";
+      return undefined;
+    }
+    if (field === "nombre") {
+      if (!value.trim()) return "El nombre es obligatorio";
+      if (value.trim().length < 3) return "El nombre debe tener al menos 3 caracteres";
+      return undefined;
+    }
+    return undefined;
+  }
+
+  function validateForm(): boolean {
+    const cedulaErr = validateField("cedula", cedula);
+    const nombreErr = validateField("nombre", nombre);
+    setErrors({ cedula: cedulaErr, nombre: nombreErr });
+    setTouched({ cedula: true, nombre: true });
+    return !cedulaErr && !nombreErr;
+  }
+
+  function handleFieldChange(field: "cedula" | "nombre", value: string, setter: (v: string) => void) {
+    setter(value);
+    if (touched[field]) {
+      const err = validateField(field, value);
+      setErrors((prev) => ({ ...prev, [field]: err }));
+    }
+  }
+
   async function handleRegister() {
+    if (!validateForm()) return;
     setSaving(true);
     const res = await registerEmployee({ cedula, nombre, role });
     setSaving(false);
@@ -76,7 +109,12 @@ export function UsuariosTab() {
   function closeRegister() {
     setRegisterOpen(false);
     setCedula(""); setNombre(""); setRole("empleado"); setGeneratedPassword(null);
+    setErrors({});
+    setTouched({});
   }
+
+  const hasErrors = !!errors.cedula || !!errors.nombre;
+  const canSubmit = !hasErrors && cedula.trim().length > 0 && nombre.trim().length >= 3;
 
   async function confirmRoleChange() {
     if (!roleDialog) return;
@@ -188,12 +226,42 @@ export function UsuariosTab() {
             <>
               <div className="space-y-3 py-2">
                 <div className="space-y-1">
-                  <Label>Cédula *</Label>
-                  <Input value={cedula} onChange={(e) => setCedula(e.target.value)} placeholder="12345678" />
+                  <Label className={cn(errors.cedula && "text-rose-600")}>Cédula *</Label>
+                  <Input
+                    value={cedula}
+                    onChange={(e) => handleFieldChange("cedula", e.target.value, setCedula)}
+                    onBlur={(e) => {
+                      const val = e.currentTarget.value;
+                      setTouched((prev) => ({ ...prev, cedula: true }));
+                      setErrors((prev) => ({ ...prev, cedula: validateField("cedula", val) }));
+                    }}
+                    placeholder="12345678"
+                    className={cn(errors.cedula && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+                  />
+                  {errors.cedula && (
+                    <p className="flex items-center gap-1 text-xs text-rose-600">
+                      <span>⚠</span> {errors.cedula}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
-                  <Label>Nombre completo *</Label>
-                  <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Juan Pérez" />
+                  <Label className={cn(errors.nombre && "text-rose-600")}>Nombre completo *</Label>
+                  <Input
+                    value={nombre}
+                    onChange={(e) => handleFieldChange("nombre", e.target.value, setNombre)}
+                    onBlur={(e) => {
+                      const val = e.currentTarget.value;
+                      setTouched((prev) => ({ ...prev, nombre: true }));
+                      setErrors((prev) => ({ ...prev, nombre: validateField("nombre", val) }));
+                    }}
+                    placeholder="Juan Pérez"
+                    className={cn(errors.nombre && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+                  />
+                  {errors.nombre && (
+                    <p className="flex items-center gap-1 text-xs text-rose-600">
+                      <span>⚠</span> {errors.nombre}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <Label>Rol inicial</Label>
@@ -209,7 +277,11 @@ export function UsuariosTab() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={closeRegister}>Cancelar</Button>
-                <Button onClick={handleRegister} disabled={saving} style={{ background: "#6C5CE7" }}>
+                <Button
+                  onClick={handleRegister}
+                  disabled={saving || !canSubmit}
+                  style={{ background: "#6C5CE7" }}
+                >
                   {saving ? "Registrando..." : "Registrar"}
                 </Button>
               </DialogFooter>

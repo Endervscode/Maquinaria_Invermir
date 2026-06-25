@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 
 export function LoginScreen() {
   const { login, resetPasswordByCedula } = useAuth();
@@ -28,13 +29,19 @@ export function LoginScreen() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCedula, setRecoveryCedula] = useState("");
   const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [loginErrors, setLoginErrors] = useState<{ identifier?: string; password?: string }>({});
+
+  function validateLogin(): boolean {
+    const errs: { identifier?: string; password?: string } = {};
+    if (!identifier.trim()) errs.identifier = "Ingrese su usuario (cédula o correo)";
+    if (!password.trim()) errs.password = "Ingrese su contraseña";
+    setLoginErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!identifier || !password) {
-      toast.error("Ingrese su usuario y contraseña");
-      return;
-    }
+    if (!validateLogin()) return;
     setLoading(true);
     const res = await login(identifier, password);
     setLoading(false);
@@ -110,12 +117,20 @@ export function LoginScreen() {
                 <Input
                   id="identifier"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (loginErrors.identifier) setLoginErrors((prev) => ({ ...prev, identifier: undefined }));
+                  }}
                   placeholder="Ej: 12345678 o admin@maquinaria.local"
-                  className="pl-10"
+                  className={cn("pl-10", loginErrors.identifier && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
                   autoComplete="username"
                 />
               </div>
+              {loginErrors.identifier && (
+                <p className="flex items-center gap-1 text-xs text-rose-600">
+                  <span>⚠</span> {loginErrors.identifier}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -137,9 +152,12 @@ export function LoginScreen() {
                   id="password"
                   type={show ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (loginErrors.password) setLoginErrors((prev) => ({ ...prev, password: undefined }));
+                  }}
                   placeholder="••••••••"
-                  className="pl-10 pr-10"
+                  className={cn("pl-10 pr-10", loginErrors.password && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
                   autoComplete="current-password"
                 />
                 <button
