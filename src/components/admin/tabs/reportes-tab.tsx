@@ -6,7 +6,6 @@ import {
   Entrada,
   Salida,
   Turno,
-  Usuario,
   MINERAL_LABELS,
   ROLE_LABELS,
 } from "@/lib/types";
@@ -46,7 +45,6 @@ export function ReportesTab() {
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [entradas, setEntradas] = useState<Entrada[]>([]);
   const [salidas, setSalidas] = useState<Salida[]>([]);
-  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [from, setFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10);
   });
@@ -59,7 +57,6 @@ export function ReportesTab() {
       setTurnos(await getAll<Turno>("turnos"));
       setEntradas(await getAll<Entrada>("entradas"));
       setSalidas(await getAll<Salida>("salidas"));
-      setUsuarios(await getAll<Usuario>("usuarios"));
     })();
   }, []);
 

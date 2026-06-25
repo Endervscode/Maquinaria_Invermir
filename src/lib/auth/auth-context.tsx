@@ -10,11 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Role, Usuario } from "@/lib/types";
-import { getAll, getDB, put, getByIndex } from "@/lib/indexeddb/db";
-import { buildSeedUsers, employeeDefaultPassword, syntheticEmail } from "@/lib/auth/seed";
-import { generateSalt, hashPassword, verifyPassword } from "@/lib/auth/pbkdf2";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import { triggerSync } from "@/lib/sync/sync-manager";
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -31,7 +27,7 @@ interface AuthContextValue {
   }) => Promise<{ ok: boolean; error?: string; password?: string }>;
   resetPasswordByCedula: (
     cedula: string
-  ) => Promise<{ ok: boolean; error?: string; password?: string }>;
+  ) => Promise<{ ok: boolean; error?: string }>;
   updateRole: (
     userId: string,
     role: Role
@@ -42,15 +38,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const SESSION_KEY = "maquinaria.session.userId";
-
-function uuid(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+function mapProfileToUser(profile: any): Usuario {
+  return {
+    id: profile.id,
+    cedula: profile.cedula,
+    nombre: profile.nombre,
+    email: profile.email,
+    role: profile.role,
+    active: profile.active,
+    created_at: profile.created_at,
+    updated_at: profile.updated_at,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -60,180 +58,231 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- bootstrap: ensure seed admins exist + restore session ---
+  // --- bootstrap: restore session from Supabase ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const db = await getDB();
-        const existing = await getAll<Usuario>("usuarios");
-        let users = existing;
-        if (existing.length === 0) {
-          const seed = await buildSeedUsers();
-          const tx = db.transaction("usuarios", "readwrite");
-          await Promise.all(seed.map((u) => tx.store.put(u)));
-          await tx.done;
-          users = seed;
+        if (!isSupabaseConfigured) {
+          console.warn("[auth] Supabase no está configurado. No hay autenticación disponible.");
+          if (!cancelled) setLoading(false);
+          return;
         }
-        // restore session
-        const savedId = localStorage.getItem(SESSION_KEY);
-        if (savedId) {
-          const found = users.find((u) => u.id === savedId) || (await db.get("usuarios", savedId));
-          if (found && found.active && !cancelled) setUser(found);
+        const sb = getSupabase();
+        if (!sb) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        const { data: { session } } = await sb.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await sb
+            .from("perfiles")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+          if (profile && !cancelled) {
+            setUser(mapProfileToUser(profile));
+          }
         }
       } catch (e) {
-        console.error("auth bootstrap error", e);
+        console.error("[auth] Error al restaurar sesión:", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   // --- login ---
   const login = useCallback<AuthContextValue["login"]>(async (identifier, password) => {
     try {
+      if (!isSupabaseConfigured) {
+        return { ok: false, error: "Supabase no está configurado" };
+      }
+      const sb = getSupabase();
+      if (!sb) return { ok: false, error: "Error de conexión con Supabase" };
+
+      // Determine if identifier is email or cedula
       const id = identifier.trim().toLowerCase();
-      const users = await getAll<Usuario>("usuarios");
-      const found = users.find(
-        (u) => u.email.toLowerCase() === id || u.cedula.toLowerCase() === id
-      );
-      if (!found) return { ok: false, error: "Usuario no encontrado" };
-      if (!found.active) return { ok: false, error: "Usuario inactivo" };
+      let email = id;
+      if (!id.includes("@")) {
+        // Construct email from cedula pattern: {cedula}@maquinaria.local
+        // (No consultamos perfiles porque RLS bloquea SELECT sin autenticación)
+        email = `${id}@maquinaria.local`;
+      }
 
-      const ok = await verifyPassword(password, found.salt, found.password_hash);
-      if (!ok) return { ok: false, error: "Contraseña incorrecta" };
-
-      localStorage.setItem(SESSION_KEY, found.id);
-      setUser(found);
-
-      // audit log
-      await put("registro_de_auditoria", {
-        id: uuid(),
-        usuario_id: found.id,
-        usuario_nombre: found.nombre,
-        accion: "login",
-        detalle: `Inicio de sesión de ${found.nombre} (${found.role})`,
-        entidad_id: found.id,
-        created_at: new Date().toISOString(),
-        synced: false,
+      const { data, error } = await sb.auth.signInWithPassword({
+        email,
+        password,
       });
-      triggerSync();
+      if (error) {
+        if (error.message === "Invalid login credentials") {
+          return { ok: false, error: "Contraseña incorrecta" };
+        }
+        return { ok: false, error: error.message };
+      }
+
+      // Get full profile
+      const { data: profile } = await sb
+        .from("perfiles")
+        .select("*")
+        .eq("id", data.user.id)
+        .single();
+
+      if (!profile) {
+        return { ok: false, error: "Perfil de usuario no encontrado" };
+      }
+
+      if (!profile.active) {
+        // If the user is inactive, sign them out right away
+        await sb.auth.signOut();
+        return { ok: false, error: "Usuario inactivo" };
+      }
+
+      setUser(mapProfileToUser(profile));
+
+      // audit log (skip if not configured)
+      try {
+        await sb.from("registro_de_auditoria").insert({
+          usuario_id: profile.id,
+          usuario_nombre: profile.nombre,
+          accion: "login",
+          detalle: `Inicio de sesión de ${profile.nombre} (${profile.role})`,
+          created_at: new Date().toISOString(),
+        });
+      } catch {}
+
       return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e?.message || "Error de inicio de sesión" };
     }
   }, []);
 
-  const logout = useCallback(() => {
-    if (user) {
-      put("registro_de_auditoria", {
-        id: uuid(),
-        usuario_id: user.id,
-        usuario_nombre: user.nombre,
-        accion: "login",
-        detalle: `Cierre de sesión de ${user.nombre}`,
-        entidad_id: user.id,
-        created_at: new Date().toISOString(),
-        synced: false,
-      });
-      triggerSync();
+  const logout = useCallback(async () => {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        await sb.auth.signOut();
+      } catch {}
     }
-    localStorage.removeItem(SESSION_KEY);
     setUser(null);
-  }, [user]);
+  }, []);
 
   // --- register employee (Admin only) ---
   const registerEmployee = useCallback<AuthContextValue["registerEmployee"]>(
     async ({ cedula, nombre, role = "empleado" }) => {
       try {
+        if (!isSupabaseConfigured) {
+          return { ok: false, error: "Supabase no está configurado" };
+        }
+        const sb = getSupabase();
+        if (!sb) return { ok: false, error: "Error de conexión con Supabase" };
+
         const cleanCedula = cedula.trim();
         if (!cleanCedula) return { ok: false, error: "La cédula es obligatoria" };
         if (!/^\d{6,10}$/.test(cleanCedula)) return { ok: false, error: "La cédula debe tener entre 6 y 10 dígitos numéricos" };
         if (!nombre.trim()) return { ok: false, error: "El nombre es obligatorio" };
         if (nombre.trim().length < 3) return { ok: false, error: "El nombre debe tener al menos 3 caracteres" };
 
-        const existing = await getByIndex<Usuario>("usuarios", "by-cedula", cleanCedula);
-        if (existing.length > 0) return { ok: false, error: "Ya existe un usuario con esa cédula" };
+        const email = `${cleanCedula}@maquinaria.local`;
+        const password = `V${cleanCedula}`;
 
-        const password = employeeDefaultPassword(cleanCedula);
-        const email = syntheticEmail(cleanCedula);
-        const salt = generateSalt();
-        const hash = await hashPassword(password, salt);
-        const now = new Date().toISOString();
-        const newUser: Usuario = {
-          id: uuid(),
-          cedula: cleanCedula,
-          nombre: nombre.trim(),
+        // Check if cédula already exists in perfiles
+        const { data: existing } = await sb
+          .from("perfiles")
+          .select("id")
+          .eq("cedula", cleanCedula)
+          .maybeSingle();
+        if (existing) {
+          return { ok: false, error: "Ya existe un usuario con esa cédula" };
+        }
+
+        // Create user via Supabase Auth
+        const { data, error } = await sb.auth.signUp({
           email,
-          role,
-          password_hash: hash,
-          salt,
-          active: true,
-          created_at: now,
-          updated_at: now,
-          synced: false,
-        };
-        await put("usuarios", newUser);
+          password,
+          options: {
+            data: {
+              cedula: cleanCedula,
+              nombre: nombre.trim(),
+              role,
+            },
+          },
+        });
+
+        if (error) {
+          console.error("[auth] Error al crear usuario en Supabase:", error.message);
+          return { ok: false, error: `Error al crear usuario: ${error.message}` };
+        }
+
+        if (!data.user) {
+          return { ok: false, error: "No se pudo crear el usuario en Supabase" };
+        }
+
+        console.log(`[auth] Usuario creado en Supabase Auth: ${email}`);
+
+        // The trigger on_auth_user_created should have created the perfiles row.
+        // If not, create it manually
+        const { data: profile } = await sb
+          .from("perfiles")
+          .select("id")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        if (!profile) {
+          await sb.from("perfiles").insert({
+            id: data.user.id,
+            cedula: cleanCedula,
+            nombre: nombre.trim(),
+            email,
+            role,
+            active: true,
+          });
+        }
 
         // audit
         if (user) {
-          await put("registro_de_auditoria", {
-            id: uuid(),
-            usuario_id: user.id,
-            usuario_nombre: user.nombre,
-            accion: "cambio_rol",
-            detalle: `Registró empleado ${nombre} (cédula ${cleanCedula}) con rol ${role}`,
-            entidad_id: newUser.id,
-            created_at: now,
-            synced: false,
-          });
-        }
-        triggerSync();
-
-        // Optionally create auth user in Supabase (best-effort)
-        if (isSupabaseConfigured) {
-          const sb = getSupabase();
-          if (sb) {
-            sb.auth
-              .signUp({ email, password })
-              .then(() => {})
-              .catch(() => {});
-          }
+          try {
+            await sb.from("registro_de_auditoria").insert({
+              usuario_id: user.id,
+              usuario_nombre: user.nombre,
+              accion: "cambio_rol",
+              detalle: `Registró empleado ${nombre} (cédula ${cleanCedula}) con rol ${role}`,
+              created_at: new Date().toISOString(),
+            });
+          } catch {}
         }
 
         return { ok: true, password };
       } catch (e: any) {
+        console.error("[auth] Error en registerEmployee:", e);
         return { ok: false, error: e?.message || "Error al registrar" };
       }
     },
     [user]
   );
 
-  // --- reset password by cédula (back to V+cédula) ---
+  // --- reset password by cédula (sends reset email) ---
   const resetPasswordByCedula = useCallback<
     AuthContextValue["resetPasswordByCedula"]
   >(async (cedula) => {
     try {
+      if (!isSupabaseConfigured) {
+        return { ok: false, error: "Supabase no está configurado" };
+      }
+      const sb = getSupabase();
+      if (!sb) return { ok: false, error: "Error de conexión con Supabase" };
+
       const cleanCedula = cedula.trim();
-      const found = await getByIndex<Usuario>("usuarios", "by-cedula", cleanCedula);
-      if (found.length === 0) return { ok: false, error: "Cédula no registrada" };
-      const u = found[0];
-      const password = employeeDefaultPassword(cleanCedula);
-      const salt = generateSalt();
-      const hash = await hashPassword(password, salt);
-      const updated: Usuario = {
-        ...u,
-        salt,
-        password_hash: hash,
-        updated_at: new Date().toISOString(),
-        synced: false,
-      };
-      await put("usuarios", updated);
-      triggerSync();
-      return { ok: true, password };
+      // Construct email from cedula pattern (no consultamos perfiles por RLS)
+      const email = `${cleanCedula}@maquinaria.local`;
+
+      const { error } = await sb.auth.resetPasswordForEmail(email);
+      if (error) {
+        return { ok: false, error: `Error al enviar correo: ${error.message}` };
+      }
+
+      return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e?.message || "Error al resetear contraseña" };
     }
@@ -243,28 +292,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateRole = useCallback<AuthContextValue["updateRole"]>(
     async (userId, role) => {
       try {
-        const u = await getDB().then((db) => db.get("usuarios", userId));
-        if (!u) return { ok: false, error: "Usuario no encontrado" };
-        const updated: Usuario = {
-          ...u,
-          role,
-          updated_at: new Date().toISOString(),
-          synced: false,
-        };
-        await put("usuarios", updated);
-        if (user) {
-          await put("registro_de_auditoria", {
-            id: uuid(),
-            usuario_id: user.id,
-            usuario_nombre: user.nombre,
-            accion: "cambio_rol",
-            detalle: `Cambió rol de ${u.nombre} a ${role}`,
-            entidad_id: userId,
-            created_at: new Date().toISOString(),
-            synced: false,
-          });
+        if (!isSupabaseConfigured) {
+          return { ok: false, error: "Supabase no está configurado" };
         }
-        triggerSync();
+        const sb = getSupabase();
+        if (!sb) return { ok: false, error: "Error de conexión con Supabase" };
+
+        const { error, data } = await sb
+          .from("perfiles")
+          .update({ role, updated_at: new Date().toISOString() })
+          .eq("id", userId)
+          .select()
+          .single();
+
+        if (error) {
+          return { ok: false, error: `Error al actualizar rol: ${error.message}` };
+        }
+
+        // If the current user changed their own role, update local state
+        if (user?.id === userId) {
+          setUser(mapProfileToUser(data));
+        }
+
+        // audit
+        if (user) {
+          try {
+            await sb.from("registro_de_auditoria").insert({
+              usuario_id: user.id,
+              usuario_nombre: user.nombre,
+              accion: "cambio_rol",
+              detalle: `Cambió rol de ${data.nombre} a ${role}`,
+              created_at: new Date().toISOString(),
+            });
+          } catch {}
+        }
+
         return { ok: true };
       } catch (e: any) {
         return { ok: false, error: e?.message };
@@ -273,8 +335,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user]
   );
 
-  const refreshUsers = useCallback(async () => {
-    return await getAll<Usuario>("usuarios");
+  const refreshUsers = useCallback(async (): Promise<Usuario[]> => {
+    if (!isSupabaseConfigured) return [];
+    const sb = getSupabase();
+    if (!sb) return [];
+    try {
+      const { data } = await sb.from("perfiles").select("*").order("nombre");
+      return (data || []).map(mapProfileToUser);
+    } catch {
+      return [];
+    }
   }, []);
 
   const listUsers = refreshUsers;

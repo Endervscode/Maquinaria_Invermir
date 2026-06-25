@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { PackagePlus, History } from "lucide-react";
 import { formatShortDateTime } from "@/hooks/use-clock";
+import { cn } from "@/lib/utils";
 
 export function EntradaTab() {
   const { user } = useAuth();
@@ -25,6 +26,8 @@ export function EntradaTab() {
   const [cantidad, setCantidad] = useState(1);
   const [saving, setSaving] = useState(false);
   const [entradas, setEntradas] = useState<Entrada[]>([]);
+  const [errors, setErrors] = useState<{ razon?: string; serial?: string }>({});
+  const [touched, setTouched] = useState<{ razon?: boolean; serial?: boolean }>({});
 
   const refresh = async () => {
     const all = await getAll<Entrada>("entradas");
@@ -32,12 +35,32 @@ export function EntradaTab() {
   };
   useEffect(() => { refresh(); }, []);
 
+  function validateField(field: "razon" | "serial", value: string): string | undefined {
+    if (!value.trim()) return field === "razon" ? "La razón es obligatoria" : "El serial es obligatorio";
+    if (value.trim().length < 2) return field === "razon" ? "La razón debe tener al menos 2 caracteres" : "El serial debe tener al menos 2 caracteres";
+    return undefined;
+  }
+
+  function validateForm(): boolean {
+    const razonErr = validateField("razon", razon);
+    const serialErr = validateField("serial", serial);
+    setErrors({ razon: razonErr, serial: serialErr });
+    setTouched({ razon: true, serial: true });
+    return !razonErr && !serialErr;
+  }
+
+  function handleFieldChange(field: "razon" | "serial", value: string, setter: (v: string) => void) {
+    setter(value);
+    if (touched[field]) {
+      setErrors((prev) => ({ ...prev, [field]: validateField(field, value) }));
+    }
+  }
+
+  const canSubmit = !errors.razon && !errors.serial && razon.trim().length >= 2 && serial.trim().length >= 2;
+
   async function handleSave() {
     if (!user) return;
-    if (!serial.trim() || !razon.trim()) {
-      toast.error("Razón y serial son obligatorios");
-      return;
-    }
+    if (!validateForm()) return;
     setSaving(true);
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
@@ -93,12 +116,42 @@ export function EntradaTab() {
 
         <div className="mt-4 space-y-3">
           <div className="space-y-1">
-            <Label>Razón *</Label>
-            <Input value={razon} onChange={(e) => setRazon(e.target.value)} placeholder="Ej: Compra, devolución..." />
+            <Label className={cn(errors.razon && "text-rose-600")}>Razón *</Label>
+            <Input
+              value={razon}
+              onChange={(e) => handleFieldChange("razon", e.target.value, setRazon)}
+              onBlur={(e) => {
+                const val = e.currentTarget.value;
+                setTouched((prev) => ({ ...prev, razon: true }));
+                setErrors((prev) => ({ ...prev, razon: validateField("razon", val) }));
+              }}
+              placeholder="Ej: Compra, devolución..."
+              className={cn(errors.razon && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+            />
+            {errors.razon && (
+              <p className="flex items-center gap-1 text-xs text-rose-600">
+                <span>⚠</span> {errors.razon}
+              </p>
+            )}
           </div>
           <div className="space-y-1">
-            <Label>Serial *</Label>
-            <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Ej: MQ-001" />
+            <Label className={cn(errors.serial && "text-rose-600")}>Serial *</Label>
+            <Input
+              value={serial}
+              onChange={(e) => handleFieldChange("serial", e.target.value, setSerial)}
+              onBlur={(e) => {
+                const val = e.currentTarget.value;
+                setTouched((prev) => ({ ...prev, serial: true }));
+                setErrors((prev) => ({ ...prev, serial: validateField("serial", val) }));
+              }}
+              placeholder="Ej: MQ-001"
+              className={cn(errors.serial && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+            />
+            {errors.serial && (
+              <p className="flex items-center gap-1 text-xs text-rose-600">
+                <span>⚠</span> {errors.serial}
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -121,7 +174,7 @@ export function EntradaTab() {
           <div className="rounded-lg bg-slate-50 p-2 text-xs text-slate-500">
             Fecha: <span className="font-semibold">{new Date().toLocaleDateString("es-VE")}</span>
           </div>
-          <Button onClick={handleSave} disabled={saving} className="w-full" style={{ background: "#6C5CE7" }}>
+          <Button onClick={handleSave} disabled={saving || !canSubmit} className="w-full" style={{ background: "#6C5CE7" }}>
             {saving ? "Guardando..." : "Registrar entrada"}
           </Button>
         </div>

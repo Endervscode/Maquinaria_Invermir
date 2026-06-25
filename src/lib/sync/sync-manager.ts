@@ -13,11 +13,9 @@ import type {
   RevisionTurno,
   Salida,
   Turno,
-  Usuario,
 } from "@/lib/types";
 
 type StoreName =
-  | "usuarios"
   | "turnos"
   | "entradas"
   | "salidas"
@@ -29,7 +27,6 @@ type StoreName =
   | "localidades";
 
 const TABLE_MAP: Record<StoreName, string> = {
-  usuarios: "perfiles",
   turnos: "turnos",
   entradas: "entradas",
   salidas: "salidas",
@@ -41,14 +38,9 @@ const TABLE_MAP: Record<StoreName, string> = {
   localidades: "ubicaciones",
 };
 
-// Strip client-only fields before sending to Supabase
+// Strip client-only fields (synced flag) before sending to Supabase
 function toRow(v: any): any {
   const { synced, ...rest } = v;
-  // Don't push password_hash/salt for users via client (should be handled server-side)
-  if (rest.password_hash !== undefined) {
-    const { password_hash, salt, ...safe } = rest;
-    return safe;
-  }
   return rest;
 }
 
@@ -83,7 +75,6 @@ async function runSync(): Promise<void> {
   if (!sb) return;
 
   const stores: StoreName[] = [
-    "usuarios",
     "localidades",
     "maquinaria",
     "entradas",
@@ -108,7 +99,9 @@ async function runSync(): Promise<void> {
         const batch = rows.slice(i, i + 50);
         const { error } = await sb.from(table).upsert(batch, { onConflict: "id" });
         if (error) {
-          console.warn(`[sync] ${table} upsert error:`, error.message);
+          console.error(`[sync] Error al sincronizar ${table} (${batch.length} registros):`, error.message);
+        } else {
+          console.log(`[sync] ${table}: ${batch.length} registros sincronizados correctamente`);
         }
       }
       // mark as synced locally
@@ -123,7 +116,7 @@ async function runSync(): Promise<void> {
       );
       await tx.done;
     } catch (e) {
-      console.warn(`[sync] ${store} error:`, e);
+      console.error(`[sync] Error en store "${store}":`, e instanceof Error ? e.message : e);
     }
   }
 }
@@ -136,7 +129,6 @@ export async function pullFromServer(): Promise<void> {
   const pulls: { store: StoreName; table: string }[] = [
     { store: "localidades", table: "ubicaciones" },
     { store: "maquinaria", table: "maquinaria" },
-    { store: "usuarios", table: "perfiles" },
     { store: "turnos", table: "turnos" },
     { store: "entradas", table: "entradas" },
     { store: "salidas", table: "salidas" },
@@ -149,15 +141,20 @@ export async function pullFromServer(): Promise<void> {
   for (const { store, table } of pulls) {
     try {
       const { data, error } = await sb.from(table).select("*");
-      if (error || !data) continue;
+      if (error) {
+        console.warn(`[pull] Error al obtener ${table}:`, error.message);
+        continue;
+      }
+      if (!data || data.length === 0) continue;
       const rows = data.map((r: any) => ({ ...r, synced: true }));
       const db = (await import("@/lib/indexeddb/db")).getDB;
       const dbh = await db();
       const tx = dbh.transaction(store as any, "readwrite");
       await Promise.all(rows.map((r: any) => tx.store.put(r)));
       await tx.done;
+      console.log(`[pull] ${table}: ${rows.length} registros descargados`);
     } catch (e) {
-      console.warn(`[pull] ${table} error:`, e);
+      console.error(`[pull] Error en tabla "${table}":`, e instanceof Error ? e.message : e);
     }
   }
 }

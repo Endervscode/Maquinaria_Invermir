@@ -27,12 +27,9 @@ export interface Usuario {
   nombre: string;
   email: string;
   role: Role;
-  password_hash: string; // PBKDF2-SHA256 hex
-  salt: string;          // hex
   active: boolean;
   created_at: string;
   updated_at: string;
-  synced: boolean;
 }
 
 // ---------------------------------------------------------------------------

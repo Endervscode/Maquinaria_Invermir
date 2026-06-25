@@ -1,6 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
-  Usuario,
   Localidad,
   Maquinaria,
   Turno,
@@ -17,11 +16,6 @@ import type {
 // IndexedDB schema definition
 // ---------------------------------------------------------------------------
 interface MaquinariaDB extends DBSchema {
-  usuarios: {
-    key: string;
-    value: Usuario;
-    indexes: { "by-cedula": string; "by-email": string; "by-synced": boolean };
-  };
   turnos: {
     key: string;
     value: Turno;
@@ -85,12 +79,6 @@ export function getDB(): Promise<IDBPDatabase<MaquinariaDB>> {
   if (!dbPromise) {
     dbPromise = openDB<MaquinariaDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains("usuarios")) {
-          const s = db.createObjectStore("usuarios", { keyPath: "id" });
-          s.createIndex("by-cedula", "cedula");
-          s.createIndex("by-email", "email");
-          s.createIndex("by-synced", "synced");
-        }
         if (!db.objectStoreNames.contains("turnos")) {
           const s = db.createObjectStore("turnos", { keyPath: "id" });
           s.createIndex("by-usuario", "usuario_id");

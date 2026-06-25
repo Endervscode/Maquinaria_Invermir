@@ -29,13 +29,11 @@ import { useClock, formatShortDateTime } from "@/hooks/use-clock";
 import {
   ESTADO_LABELS,
   MINERAL_LABELS,
-  type Entrada,
   type Maquinaria,
   type MaquinariaEstado,
   type Observacion,
   type RevisionTurno,
   type Turno,
-  type Usuario,
 } from "@/lib/types";
 import { StatCard } from "@/components/shared/stat-card";
 import { MineralBadge } from "@/components/shared/mineral-badge";
@@ -55,7 +53,6 @@ export function KpiTab() {
   const [maquinaria, setMaquinaria] = useState<Maquinaria[]>([]);
   const [observaciones, setObservaciones] = useState<Observacion[]>([]);
   const [revisiones, setRevisiones] = useState<RevisionTurno[]>([]);
-  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -63,7 +60,6 @@ export function KpiTab() {
       setMaquinaria(await getAll<Maquinaria>("maquinaria"));
       setObservaciones(await getAll<Observacion>("observaciones"));
       setRevisiones(await getAll<RevisionTurno>("revisiones_de_turnos"));
-      setUsuarios(await getAll<Usuario>("usuarios"));
     })();
   }, []);
 

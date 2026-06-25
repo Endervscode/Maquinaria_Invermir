@@ -85,20 +85,31 @@ function UbicacionesPanel() {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Localidad | null>(null);
+  const [nombreError, setNombreError] = useState<string | undefined>(undefined);
+  const [nombreTouched, setNombreTouched] = useState(false);
 
   const refresh = async () => setLocalidades(await getAll<Localidad>("localidades"));
   useEffect(() => { refresh(); }, []);
 
+  function validateNombre(value: string): string | undefined {
+    if (!value.trim()) return "El nombre de la ubicación es obligatorio";
+    if (value.trim().length < 2) return "El nombre debe tener al menos 2 caracteres";
+    return undefined;
+  }
+
   function openNew() {
-    setEditing(null); setNombre(""); setDescripcion(""); setOpen(true);
+    setEditing(null); setNombre(""); setDescripcion(""); setNombreError(undefined); setNombreTouched(false); setOpen(true);
   }
   function openEdit(l: Localidad) {
-    setEditing(l); setNombre(l.nombre); setDescripcion(l.descripcion || ""); setOpen(true);
+    setEditing(l); setNombre(l.nombre); setDescripcion(l.descripcion || ""); setNombreError(undefined); setNombreTouched(false); setOpen(true);
   }
 
   async function save() {
     if (!user) return;
-    if (!nombre.trim()) { toast.error("Nombre requerido"); return; }
+    const err = validateNombre(nombre);
+    setNombreError(err);
+    setNombreTouched(true);
+    if (err) return;
     const now = new Date().toISOString();
     if (editing) {
       const updated: Localidad = { ...editing, nombre: nombre.trim(), descripcion: descripcion.trim(), updated_at: now, synced: false };
@@ -187,8 +198,24 @@ function UbicacionesPanel() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <Label>Nombre *</Label>
-              <Input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              <Label className={cn(nombreError && "text-rose-600")}>Nombre *</Label>
+              <Input
+                value={nombre}
+                onChange={(e) => {
+                  setNombre(e.target.value);
+                  if (nombreTouched) setNombreError(validateNombre(e.target.value));
+                }}
+                onBlur={(e) => {
+                  setNombreTouched(true);
+                  setNombreError(validateNombre(e.currentTarget.value));
+                }}
+                className={cn(nombreError && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+              />
+              {nombreError && (
+                <p className="flex items-center gap-1 text-xs text-rose-600">
+                  <span>⚠</span> {nombreError}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label>Descripción</Label>
@@ -240,6 +267,8 @@ function RegistroPanel() {
   const [cantidad, setCantidad] = useState(1);
   const [horas, setHoras] = useState(0);
   const [localidadId, setLocalidadId] = useState("");
+  const [serialError, setSerialError] = useState<string | undefined>(undefined);
+  const [serialTouched, setSerialTouched] = useState(false);
 
   const refresh = async () => {
     setMaquinas(await getAll<Maquinaria>("maquinaria"));
@@ -247,9 +276,18 @@ function RegistroPanel() {
   };
   useEffect(() => { refresh(); }, []);
 
+  function validateSerial(value: string): string | undefined {
+    if (!value.trim()) return "El serial es obligatorio";
+    if (value.trim().length < 2) return "El serial debe tener al menos 2 caracteres";
+    return undefined;
+  }
+
   async function addMachine() {
     if (!user) return;
-    if (!serial.trim()) { toast.error("Serial requerido"); return; }
+    const err = validateSerial(serial);
+    setSerialError(err);
+    setSerialTouched(true);
+    if (err) return;
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
     const m: Maquinaria = {
@@ -320,8 +358,25 @@ function RegistroPanel() {
         <p className="subtitle-underline text-xs text-slate-500">Complete los datos del equipo</p>
         <div className="mt-4 space-y-3">
           <div className="space-y-1">
-            <Label>Serial *</Label>
-            <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="MQ-001" />
+            <Label className={cn(serialError && "text-rose-600")}>Serial *</Label>
+            <Input
+              value={serial}
+              onChange={(e) => {
+                setSerial(e.target.value);
+                if (serialTouched) setSerialError(validateSerial(e.target.value));
+              }}
+              onBlur={(e) => {
+                setSerialTouched(true);
+                setSerialError(validateSerial(e.currentTarget.value));
+              }}
+              placeholder="MQ-001"
+              className={cn(serialError && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+            />
+            {serialError && (
+              <p className="flex items-center gap-1 text-xs text-rose-600">
+                <span>⚠</span> {serialError}
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -356,7 +411,7 @@ function RegistroPanel() {
             <Label>Descripción</Label>
             <Textarea rows={2} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
           </div>
-          <Button onClick={addMachine} className="w-full" style={{ background: "#6C5CE7" }}>
+          <Button onClick={addMachine} disabled={serialError ? true : false} className="w-full" style={{ background: "#6C5CE7" }}>
             <Plus size={16} className="mr-1" /> Registrar
           </Button>
         </div>
@@ -522,6 +577,8 @@ function CalendarioPanel() {
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [descripcion, setDescripcion] = useState("");
   const [horasEnMant, setHorasEnMant] = useState(2);
+  const [maquinariaError, setMaquinariaError] = useState<string | undefined>(undefined);
+  const [maquinariaTouched, setMaquinariaTouched] = useState(false);
 
   const refresh = async () => {
     const all = await getAll<MantenimientoProgramado>("mantenimiento_programado");
@@ -532,7 +589,11 @@ function CalendarioPanel() {
 
   async function save() {
     if (!user) return;
-    if (!maquinariaId) { toast.error("Seleccione maquinaria"); return; }
+    if (!maquinariaId) {
+      setMaquinariaError("Seleccione una maquinaria");
+      setMaquinariaTouched(true);
+      return;
+    }
     const machine = maquinas.find((m) => m.id === maquinariaId);
     if (!machine) return;
     const now = new Date().toISOString();
@@ -637,13 +698,30 @@ function CalendarioPanel() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <Label>Maquinaria *</Label>
-              <Select value={maquinariaId} onValueChange={setMaquinariaId}>
-                <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
+              <Label className={cn(maquinariaError && "text-rose-600")}>Maquinaria *</Label>
+              <Select
+                value={maquinariaId}
+                onValueChange={(v) => {
+                  setMaquinariaId(v);
+                  if (maquinariaTouched) setMaquinariaError(v ? undefined : "Seleccione una maquinaria");
+                }}
+                onOpenChange={(open) => {
+                  if (!open && maquinariaTouched) {
+                    setMaquinariaError(maquinariaId ? undefined : "Seleccione una maquinaria");
+                  }
+                  if (open) setMaquinariaTouched(true);
+                }}
+              >
+                <SelectTrigger className={cn(maquinariaError && "border-rose-400 ring-rose-200")}><SelectValue placeholder="Seleccione" /></SelectTrigger>
                 <SelectContent>
                   {maquinas.map((m) => <SelectItem key={m.id} value={m.id}>{m.serial} · {m.marca} {m.modelo}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {maquinariaError && (
+                <p className="flex items-center gap-1 text-xs text-rose-600">
+                  <span>⚠</span> {maquinariaError}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

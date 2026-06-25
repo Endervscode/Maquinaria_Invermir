@@ -34,6 +34,7 @@ export function SalidaTab() {
   const [salidaOpen, setSalidaOpen] = useState(false);
   const [razon, setRazon] = useState("");
   const [saving, setSaving] = useState(false);
+  const [razonError, setRazonError] = useState<string | undefined>(undefined);
 
   const refresh = async () => {
     const m = await getAll<Maquinaria>("maquinaria");
@@ -50,12 +51,16 @@ export function SalidaTab() {
     m.modelo.toLowerCase().includes(search.toLowerCase())
   );
 
+  function validateRazon(value: string): string | undefined {
+    if (!value.trim()) return "La razón de salida es obligatoria";
+    if (value.trim().length < 3) return "La razón debe tener al menos 3 caracteres";
+    return undefined;
+  }
+
   async function handleSalida() {
     if (!user || !selected) return;
-    if (!razon.trim()) {
-      toast.error("Indique la razón de salida");
-      return;
-    }
+    const err = validateRazon(razon);
+    if (err) { setRazonError(err); return; }
     setSaving(true);
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
@@ -93,6 +98,7 @@ export function SalidaTab() {
   function openSalida(m: Maquinaria) {
     setSelected(m);
     setRazon("");
+    setRazonError(undefined);
     setSalidaOpen(true);
   }
 
@@ -184,18 +190,31 @@ export function SalidaTab() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <Label htmlFor="razon-salida">Razón de la salida *</Label>
+            <Label htmlFor="razon-salida" className={cn(razonError && "text-rose-600")}>Razón de la salida *</Label>
             <Textarea
               id="razon-salida"
               value={razon}
-              onChange={(e) => setRazon(e.target.value)}
+              onChange={(e) => {
+                setRazon(e.target.value);
+                if (razonError) setRazonError(validateRazon(e.target.value));
+              }}
+              onBlur={(e) => {
+                const val = e.currentTarget.value;
+                setRazonError(validateRazon(val));
+              }}
               placeholder="Ej: Venta, devolución, baja, préstamo..."
               rows={3}
+              className={cn(razonError && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
             />
+            {razonError && (
+              <p className="flex items-center gap-1 text-xs text-rose-600">
+                <span>⚠</span> {razonError}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSalidaOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSalida} disabled={saving} className="bg-rose-600 hover:bg-rose-700">
+            <Button onClick={handleSalida} disabled={saving || (razon.trim().length > 0 && razonError ? true : false) || !razon.trim()} className="bg-rose-600 hover:bg-rose-700">
               {saving ? "Procesando..." : "Confirmar salida"}
             </Button>
           </DialogFooter>

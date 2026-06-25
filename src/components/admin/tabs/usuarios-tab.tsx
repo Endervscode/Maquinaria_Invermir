@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
-import { getAll, put } from "@/lib/indexeddb/db";
-import { triggerSync } from "@/lib/sync/sync-manager";
 import { ROLE_LABELS, type Role, type Usuario } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +34,7 @@ const ROLE_BADGE: Record<Role, { bg: string; text: string }> = {
 };
 
 export function UsuariosTab() {
-  const { registerEmployee, updateRole, user: currentUser } = useAuth();
+  const { registerEmployee, updateRole, listUsers, user: currentUser } = useAuth();
   const [users, setUsers] = useState<Usuario[]>([]);
   const [search, setSearch] = useState("");
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -52,7 +50,10 @@ export function UsuariosTab() {
   const [errors, setErrors] = useState<{ cedula?: string; nombre?: string }>({});
   const [touched, setTouched] = useState<{ cedula?: boolean; nombre?: boolean }>({});
 
-  const refresh = async () => setUsers(await getAll<Usuario>("usuarios"));
+  const refresh = async () => {
+    const list = await listUsers();
+    setUsers(list);
+  };
   useEffect(() => { refresh(); }, []);
 
   const filtered = users.filter((u) =>
