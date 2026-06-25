@@ -64,7 +64,7 @@ export function LoginScreen() {
       toast.error(res.error || "No se pudo resetear");
       return;
     }
-    toast.success("Se ha enviado un correo para restablecer su contraseña");
+    toast.success(`Contraseña reseteada a: V${recoveryCedula}`);
     setRecoveryOpen(false);
     setRecoveryCedula("");
   }
@@ -185,6 +185,7 @@ export function LoginScreen() {
             <p className="mb-1 font-semibold text-slate-700">Cuentas de administrador:</p>
             <p>deya@maquinaria.local · jhonatan@maquinaria.local</p>
             <p className="mt-1 text-slate-500">Contraseña: <code className="rounded bg-white px-1 py-0.5">admin123</code></p>
+            <p className="mt-2 text-slate-400">Login con cédula o correo electrónico.</p>
           </div>
         </div>
       </div>
@@ -197,7 +198,7 @@ export function LoginScreen() {
               <KeyRound className="text-[#6C5CE7]" size={20} /> Recuperar contraseña
             </DialogTitle>
             <DialogDescription>
-              Ingrese su cédula. Recibirá un correo para restablecer su contraseña.
+              Ingrese su cédula. La contraseña se reseteará a <strong>V + cédula</strong>.
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">

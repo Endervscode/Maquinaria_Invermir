@@ -1,92 +1,133 @@
 -- ============================================================================
 -- Control de Maquinaria Pesada · Supabase Schema
 -- Run this in the Supabase SQL editor.
+-- IMPORTANTE: Ejecutar el script COMPLETO de una sola vez.
 -- ============================================================================
 
 -- Extensions
 create extension if not exists "pgcrypto";
 
 -- ============================================================================
--- Helper SECURITY DEFINER functions (avoid RLS recursion on perfiles)
--- ============================================================================
-create or replace function public.is_admin()
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.perfiles p
-    where p.id = auth.uid()
-      and p.role = 'admin'
-  );
-$$;
-
-create or replace function public.is_admin_or_gerente()
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.perfiles p
-    where p.id = auth.uid()
-      and p.role in ('admin', 'gerente')
-  );
-$$;
-
--- ============================================================================
--- 1. perfiles (linked to auth.users)
+-- 1. perfiles (standalone — SIN FK a auth.users)
+--    Los usuarios existen solo aquí, no como usuarios reales de Supabase Auth.
 -- ============================================================================
 create table if not exists public.perfiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
   cedula text unique not null,
   nombre text not null,
   email text unique not null,
   role text not null default 'empleado' check (role in ('admin','gerente','empleado')),
-  password_hash text,         -- PBKDF2-SHA256 hex (offline fallback)
-  salt text,                  -- hex
+  password_hash text not null,  -- PBKDF2-SHA256 hex
+  salt text not null,           -- hex
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-alter table public.perfiles enable row level security;
+-- ============================================================================
+-- RPC functions (SECURITY DEFINER — bypass RLS)
+-- ============================================================================
 
--- Everyone can read their own profile; admins/gerentes can read all
-create policy "perfiles_self_read" on public.perfiles
-  for select using (id = auth.uid() or public.is_admin_or_gerente());
+-- fn_login: devuelve usuario por cédula o correo (incluye hash para verificar)
+create or replace function public.fn_login(p_login_id text)
+returns table (
+  id uuid, cedula text, nombre text, email text, role text,
+  password_hash text, salt text, active boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, cedula, nombre, email, role, password_hash, salt, active
+  from public.perfiles
+  where cedula = p_login_id or email = p_login_id
+  limit 1;
+$$;
 
-create policy "perfiles_admin_write" on public.perfiles
-  for all using (public.is_admin()) with check (public.is_admin());
-
--- Trigger: handle_new_user() — creates a profile when a new auth user signs up
-create or replace function public.handle_new_user()
-returns trigger
+-- fn_register: crea un nuevo usuario con contraseña hasheada
+create or replace function public.fn_register(
+  p_cedula text,
+  p_nombre text,
+  p_email text,
+  p_password_hash text,
+  p_salt text,
+  p_role text default 'empleado'
+)
+returns uuid
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  new_id uuid := gen_random_uuid();
 begin
-  insert into public.perfiles (id, cedula, nombre, email, role)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data->>'cedula', split_part(new.email, '@', 1)),
-    coalesce(new.raw_user_meta_data->>'nombre', split_part(new.email, '@', 1)),
-    new.email,
-    coalesce(new.raw_user_meta_data->>'role', 'empleado')
-  )
-  on conflict (id) do nothing;
-  return new;
+  insert into public.perfiles (id, cedula, nombre, email, password_hash, salt, role)
+  values (new_id, p_cedula, p_nombre, p_email, p_password_hash, p_salt, p_role);
+  return new_id;
 end;
 $$;
 
+-- fn_get_users: lista todos los usuarios (para panel admin)
+create or replace function public.fn_get_users()
+returns table (
+  id uuid, cedula text, nombre text, email text, role text,
+  active boolean, created_at timestamptz, updated_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, cedula, nombre, email, role, active, created_at, updated_at
+  from public.perfiles
+  order by nombre;
+$$;
+
+-- fn_update_role: cambia el rol de un usuario
+create or replace function public.fn_update_role(p_user_id uuid, p_role text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.perfiles set role = p_role, updated_at = now()
+  where id = p_user_id;
+$$;
+
+-- fn_update_password: actualiza la contraseña de un usuario
+create or replace function public.fn_update_password(
+  p_user_id uuid, p_password_hash text, p_salt text
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.perfiles set password_hash = p_password_hash, salt = p_salt, updated_at = now()
+  where id = p_user_id;
+$$;
+
+-- fn_get_user_by_cedula: busca usuario por cédula (para reset de contraseña)
+create or replace function public.fn_get_user_by_cedula(p_cedula text)
+returns table (
+  id uuid, cedula text, nombre text, email text, role text, active boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, cedula, nombre, email, role, active
+  from public.perfiles
+  where cedula = p_cedula
+  limit 1;
+$$;
+
+-- Eliminar trigger viejo (ya no se necesita — no usamos auth.users)
 drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
+drop function if exists public.handle_new_user();
+
+-- RLS: perfiles no tiene RLS público — solo se accede via RPC functions
+alter table public.perfiles enable row level security;
+-- Policy vacía: sin RLS directa, todo via security definer RPC
 
 -- ============================================================================
 -- 2. ubicaciones (localidades)
@@ -100,10 +141,8 @@ create table if not exists public.ubicaciones (
 );
 
 alter table public.ubicaciones enable row level security;
-create policy "ubicaciones_read" on public.ubicaciones
-  for select using (public.is_admin_or_gerente() or true);
-create policy "ubicaciones_admin_write" on public.ubicaciones
-  for all using (public.is_admin()) with check (public.is_admin());
+create policy "ubicaciones_all" on public.ubicaciones
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 3. maquinaria
@@ -126,10 +165,8 @@ create table if not exists public.maquinaria (
 );
 
 alter table public.maquinaria enable row level security;
-create policy "maquinaria_read" on public.maquinaria
-  for select using (true);
-create policy "maquinaria_admin_gerente_write" on public.maquinaria
-  for all using (public.is_admin_or_gerente()) with check (public.is_admin_or_gerente());
+create policy "maquinaria_all" on public.maquinaria
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 4. turnos
@@ -163,13 +200,8 @@ create index if not exists idx_turnos_estado on public.turnos(estado);
 create index if not exists idx_turnos_fecha_inicio on public.turnos(fecha_inicio);
 
 alter table public.turnos enable row level security;
--- Empleados see and write their own turnos; admins/gerentes see all
-create policy "turnos_self_read" on public.turnos
-  for select using (usuario_id = auth.uid() or public.is_admin_or_gerente());
-create policy "turnos_self_insert" on public.turnos
-  for insert with check (usuario_id = auth.uid() or public.is_admin_or_gerente());
-create policy "turnos_self_update" on public.turnos
-  for update using (usuario_id = auth.uid() or public.is_admin_or_gerente());
+create policy "turnos_all" on public.turnos
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 5. entradas
@@ -188,9 +220,8 @@ create table if not exists public.entradas (
 );
 
 alter table public.entradas enable row level security;
-create policy "entradas_read" on public.entradas for select using (true);
-create policy "entradas_admin_gerente_write" on public.entradas
-  for all using (public.is_admin_or_gerente()) with check (public.is_admin_or_gerente());
+create policy "entradas_all" on public.entradas
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 6. salidas
@@ -206,9 +237,8 @@ create table if not exists public.salidas (
 );
 
 alter table public.salidas enable row level security;
-create policy "salidas_read" on public.salidas for select using (true);
-create policy "salidas_admin_gerente_write" on public.salidas
-  for all using (public.is_admin_or_gerente()) with check (public.is_admin_or_gerente());
+create policy "salidas_all" on public.salidas
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 7. observaciones
@@ -231,12 +261,8 @@ create index if not exists idx_obs_maquinaria on public.observaciones(maquinaria
 create index if not exists idx_obs_turno on public.observaciones(turno_id);
 
 alter table public.observaciones enable row level security;
-create policy "observaciones_read" on public.observaciones
-  for select using (true);
-create policy "observaciones_self_insert" on public.observaciones
-  for insert with check (usuario_id = auth.uid());
-create policy "observaciones_self_update" on public.observaciones
-  for update using (usuario_id = auth.uid() or public.is_admin_or_gerente());
+create policy "observaciones_all" on public.observaciones
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 8. mantenimiento_programado
@@ -257,9 +283,8 @@ create index if not exists idx_mant_maquinaria on public.mantenimiento_programad
 create index if not exists idx_mant_fecha on public.mantenimiento_programado(fecha_programada);
 
 alter table public.mantenimiento_programado enable row level security;
-create policy "mant_read" on public.mantenimiento_programado for select using (true);
-create policy "mant_admin_gerente_write" on public.mantenimiento_programado
-  for all using (public.is_admin_or_gerente()) with check (public.is_admin_or_gerente());
+create policy "mant_all" on public.mantenimiento_programado
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 9. registro_de_auditoria
@@ -281,8 +306,6 @@ create table if not exists public.registro_de_auditoria (
 create index if not exists idx_audit_usuario on public.registro_de_auditoria(usuario_id);
 
 alter table public.registro_de_auditoria enable row level security;
-create policy "audit_read" on public.registro_de_auditoria
-  for select using (public.is_admin());
 create policy "audit_insert" on public.registro_de_auditoria
   for insert with check (true);
 
@@ -308,19 +331,16 @@ create index if not exists idx_rev_turno on public.revisiones_de_turnos(turno_id
 create index if not exists idx_rev_estado on public.revisiones_de_turnos(estado);
 
 alter table public.revisiones_de_turnos enable row level security;
-create policy "rev_self_read" on public.revisiones_de_turnos
-  for select using (usuario_id = auth.uid() or public.is_admin_or_gerente());
-create policy "rev_self_insert" on public.revisiones_de_turnos
-  for insert with check (usuario_id = auth.uid());
-create policy "rev_admin_update" on public.revisiones_de_turnos
-  for update using (public.is_admin());
+create policy "rev_all" on public.revisiones_de_turnos
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- updated_at triggers
 -- ============================================================================
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
-begin new.updated_at = now(); return new; end; $$;
+begin new.updated_at = now(); return new; end;
+$$;
 
 do $$
 declare t text;
@@ -336,15 +356,6 @@ begin
 end$$;
 
 -- ============================================================================
--- Seed admin profiles (run after creating auth.users via Supabase dashboard
--- or by signing them up through the auth API).
+-- Seed: Los admins se crean desde el panel de admin de la app,
+-- o manualmente con el script seed_admins.sql
 -- ============================================================================
-insert into public.perfiles (id, cedula, nombre, email, role)
-select auth.uid(), 'admin-deya', 'Deya', 'deya@maquinaria.local', 'admin'
-where auth.uid() is not null
-on conflict (email) do nothing;
-
--- NOTE: to create the admin auth users, use the Supabase dashboard Auth tab
--- or run this from a server-side script:
---   supabase.auth.admin.createUser({ email: 'deya@maquinaria.local', password: 'admin123', email_confirm: true })
---   supabase.auth.admin.createUser({ email: 'jhonatan@maquinaria.local', password: 'admin123', email_confirm: true })
