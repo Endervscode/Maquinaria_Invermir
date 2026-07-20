@@ -76,7 +76,7 @@ export interface Turno {
   localidad_nombre: string;
   maquinaria_id: string;
   maquinaria_serial: string;
-  jornada: JornadaType;        // regular 7h / extraordinaria 12h
+  jornada: JornadaType;        // regular 8h / extraordinaria 12h
   fecha_inicio: string;        // ISO datetime
   fecha_fin?: string | null;
   mineral_type?: MineralType | null;
@@ -85,7 +85,7 @@ export interface Turno {
   estado: ShiftStatus;
   razon_incompleto?: string | null;
   duracion_minutos?: number | null;
-  duracion_esperada_minutos: number; // 420 or 720
+  duracion_esperada_minutos: number; // 480 or 720
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -213,7 +213,7 @@ export interface MetaRow {
 // Helpers
 // ---------------------------------------------------------------------------
 export const JORNADA_DURACION: Record<JornadaType, number> = {
-  regular: 7 * 60,        // 420 minutes
+  regular: 8 * 60,        // 480 minutes (8 horas)
   extraordinaria: 12 * 60, // 720 minutes
 };
 

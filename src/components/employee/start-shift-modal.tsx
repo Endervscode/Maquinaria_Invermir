@@ -161,7 +161,7 @@ export function StartShiftModal({
                 <RadioGroupItem id="j-reg" value="regular" />
                 <div>
                   <p className="text-sm font-semibold">Regular</p>
-                  <p className="text-xs text-slate-500">7 horas</p>
+                  <p className="text-xs text-slate-500">8 horas</p>
                 </div>
               </Label>
               <Label

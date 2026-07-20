@@ -166,7 +166,7 @@ export function EmployeeDashboard() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-white/80">Tiempo transcurrido</p>
                 <p className="font-mono text-3xl font-black tabular-nums">{elapsed}</p>
                 <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold">
-                  {activeTurno.jornada === "regular" ? "Regular · 7h" : "Extraordinaria · 12h"}
+                  {activeTurno.jornada === "regular" ? "Regular · 8h" : "Extraordinaria · 12h"}
                 </div>
               </div>
             )}

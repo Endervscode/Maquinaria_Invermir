@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Lock, User as UserIcon, Truck, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Lock, User as UserIcon, Truck, KeyRound, UserPlus } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 export function LoginScreen() {
-  const { login, resetPasswordByCedula } = useAuth();
+  const { login, registerEmployee, resetPasswordByCedula } = useAuth();
   const online = useOnlineStatus();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -30,6 +30,10 @@ export function LoginScreen() {
   const [recoveryCedula, setRecoveryCedula] = useState("");
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [loginErrors, setLoginErrors] = useState<{ identifier?: string; password?: string }>({});
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [regCedula, setRegCedula] = useState("");
+  const [regNombre, setRegNombre] = useState("");
+  const [regLoading, setRegLoading] = useState(false);
 
   function validateLogin(): boolean {
     const errs: { identifier?: string; password?: string } = {};
@@ -50,6 +54,32 @@ export function LoginScreen() {
       return;
     }
     toast.success("Bienvenido");
+  }
+
+  async function handleRegister() {
+    if (!regCedula.trim() || !regNombre.trim()) {
+      toast.error("Complete todos los campos");
+      return;
+    }
+    if (!/^\d{6,10}$/.test(regCedula.trim())) {
+      toast.error("La cédula debe tener entre 6 y 10 dígitos");
+      return;
+    }
+    if (regNombre.trim().length < 3) {
+      toast.error("El nombre debe tener al menos 3 caracteres");
+      return;
+    }
+    setRegLoading(true);
+    const res = await registerEmployee({ cedula: regCedula.trim(), nombre: regNombre.trim() });
+    setRegLoading(false);
+    if (!res.ok) {
+      toast.error(res.error || "Error al registrarse");
+      return;
+    }
+    toast.success(`Registrado exitosamente. Su contraseña es: V${regCedula.trim()}`);
+    setRegisterOpen(false);
+    setRegCedula("");
+    setRegNombre("");
   }
 
   async function onRecover() {
@@ -181,14 +211,67 @@ export function LoginScreen() {
             </Button>
           </form>
 
-          <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-            <p className="mb-1 font-semibold text-slate-700">Cuentas de administrador:</p>
-            <p>deya@maquinaria.local · jhonatan@maquinaria.local</p>
-            <p className="mt-1 text-slate-500">Contraseña: <code className="rounded bg-white px-1 py-0.5">admin123</code></p>
-            <p className="mt-2 text-slate-400">Login con cédula o correo electrónico.</p>
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-slate-400">o</span>
+            </div>
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setRegisterOpen(true)}
+            className="w-full h-11 text-base font-semibold border-2 border-[#6C5CE7] text-[#6C5CE7] hover:bg-[#F5F0FF]"
+          >
+            <UserPlus size={18} className="mr-2" /> Registrarse como empleado
+          </Button>
+
+
         </div>
       </div>
+
+      {/* Employee self-registration dialog */}
+      <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="text-[#6C5CE7]" size={20} /> Registro de empleado
+            </DialogTitle>
+            <DialogDescription>
+              Ingrese su cédula y nombre. Se le asignará una contraseña <strong>V + cédula</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="reg-cedula">Cédula</Label>
+              <Input
+                id="reg-cedula"
+                value={regCedula}
+                onChange={(e) => setRegCedula(e.target.value)}
+                placeholder="Ej: 12345678"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reg-nombre">Nombre completo</Label>
+              <Input
+                id="reg-nombre"
+                value={regNombre}
+                onChange={(e) => setRegNombre(e.target.value)}
+                placeholder="Ej: Juan Pérez"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRegisterOpen(false)}>Cancelar</Button>
+            <Button disabled={regLoading || !regCedula.trim() || !regNombre.trim()} onClick={handleRegister} style={{ background: "#6C5CE7" }}>
+              {regLoading ? "Registrando..." : "Registrarse"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Password recovery dialog */}
       <Dialog open={recoveryOpen} onOpenChange={setRecoveryOpen}>
