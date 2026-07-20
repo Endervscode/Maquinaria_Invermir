@@ -204,17 +204,16 @@ create policy "turnos_all" on public.turnos
   for all using (true) with check (true);
 
 -- ============================================================================
--- 5. entradas
+-- 5. entradas (asignación de maquinaria a ubicación)
 -- ============================================================================
 create table if not exists public.entradas (
   id uuid primary key default gen_random_uuid(),
-  razon text not null,
-  serial text not null,
-  descripcion text,
-  modelo text,
-  marca text,
-  cantidad integer not null default 1,
+  maquinaria_id uuid not null references public.maquinaria(id) on delete set null,
+  maquinaria_serial text not null,
+  localidad_id uuid not null references public.ubicaciones(id) on delete set null,
+  localidad_nombre text not null,
   fecha date not null default current_date,
+  nota text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -241,7 +240,7 @@ create policy "salidas_all" on public.salidas
   for all using (true) with check (true);
 
 -- ============================================================================
--- 7. observaciones
+-- 7. observaciones (sin fotos, solo texto con categoría maquinaria/empleado)
 -- ============================================================================
 create table if not exists public.observaciones (
   id uuid primary key default gen_random_uuid(),
@@ -250,9 +249,8 @@ create table if not exists public.observaciones (
   maquinaria_serial text,
   usuario_id uuid not null references public.perfiles(id) on delete cascade,
   usuario_nombre text not null,
-  categoria text not null check (categoria in ('mecanica','electrica','hidraulica','neumatica','estructura','otra')),
+  categoria text not null check (categoria in ('maquinaria','empleado')),
   texto text not null,
-  fotos jsonb not null default '[]'::jsonb,  -- array of base64 JPEG
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -306,8 +304,8 @@ create table if not exists public.registro_de_auditoria (
 create index if not exists idx_audit_usuario on public.registro_de_auditoria(usuario_id);
 
 alter table public.registro_de_auditoria enable row level security;
-create policy "audit_insert" on public.registro_de_auditoria
-  for insert with check (true);
+create policy "audit_all" on public.registro_de_auditoria
+  for all using (true) with check (true);
 
 -- ============================================================================
 -- 10. revisiones_de_turnos (shift_reviews for incomplete shifts)

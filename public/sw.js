@@ -16,10 +16,18 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Only handle GET requests with http/https protocol
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  // Don't cache API or Supabase calls
-  if (url.pathname.startsWith("/api") || url.host.includes("supabase")) return;
+  if (url.protocol !== "http:" && url.protocol !== "https:") return;
+
+  // Skip: Next.js build artifacts (already cache-busted), API, Supabase
+  if (url.pathname.startsWith("/_next/") ||
+      url.pathname.startsWith("/api") ||
+      url.host.includes("supabase")) return;
+
+  // Skip: development mode (localhost) — turbopack HMR manages its own caching
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

@@ -92,17 +92,16 @@ export interface Turno {
 }
 
 // ---------------------------------------------------------------------------
-// Entry / Exit (movements)
+// Entry / Deployment (asignación de maquinaria a ubicación)
 // ---------------------------------------------------------------------------
 export interface Entrada {
   id: string;
-  razon: string;
-  serial: string;
-  descripcion: string;
-  modelo: string;
-  marca: string;
-  cantidad: number;
-  fecha: string;
+  maquinaria_id: string;
+  maquinaria_serial: string;
+  localidad_id: string;
+  localidad_nombre: string;
+  fecha: string;           // date of deployment
+  nota?: string;
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -120,15 +119,11 @@ export interface Salida {
 }
 
 // ---------------------------------------------------------------------------
-// Observations
+// Observations (sin fotos, solo texto con categoría)
 // ---------------------------------------------------------------------------
 export type ObservationCategory =
-  | "mecanica"
-  | "electrica"
-  | "hidraulica"
-  | "neumatica"
-  | "estructura"
-  | "otra";
+  | "maquinaria"
+  | "empleado";
 
 export interface Observacion {
   id: string;
@@ -139,7 +134,6 @@ export interface Observacion {
   usuario_nombre: string;
   categoria: ObservationCategory;
   texto: string;
-  fotos: string[];   // base64 JPEG strings (compressed)
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -262,10 +256,6 @@ export const ESTADO_BADGE: Record<MaquinariaEstado, { bg: string; text: string }
 };
 
 export const OBSERVATION_LABELS: Record<ObservationCategory, string> = {
-  mecanica: "Mecánica",
-  electrica: "Eléctrica",
-  hidraulica: "Hidráulica",
-  neumatica: "Neumática",
-  estructura: "Estructura",
-  otra: "Otra",
+  maquinaria: "Sobre maquinaria",
+  empleado: "Sobre empleado",
 };

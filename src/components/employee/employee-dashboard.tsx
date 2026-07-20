@@ -27,7 +27,7 @@ import {
   WifiOff,
   Play,
   Square,
-  Camera,
+  MessageSquareText,
   History,
   Clock,
   User as UserIcon,
@@ -197,7 +197,7 @@ export function EmployeeDashboard() {
             className="h-16 border-2 text-base font-semibold"
             style={{ borderColor: "#6C5CE7", color: "#6C5CE7" }}
           >
-            <Camera size={22} className="mr-2" /> Nueva observación
+            <MessageSquareText size={22} className="mr-2" /> Nueva observación
           </Button>
           <div className="grid h-16 place-items-center rounded-xl border-2 border-dashed border-slate-300 text-center">
             <div>
@@ -285,7 +285,7 @@ export function EmployeeDashboard() {
 
         {/* Recent observations */}
         <div className="mt-8 mb-3 flex items-center gap-2">
-          <Camera size={18} className="text-[#6C5CE7]" />
+          <MessageSquareText size={18} className="text-[#6C5CE7]" />
           <h2 className="text-lg font-bold text-slate-900">Observaciones recientes</h2>
         </div>
         {observations.length === 0 ? (
@@ -303,13 +303,7 @@ export function EmployeeDashboard() {
                   <span className="text-xs text-slate-400">{formatShortDateTime(o.created_at)}</span>
                 </div>
                 <p className="text-sm text-slate-700 line-clamp-3">{o.texto}</p>
-                {o.fotos.length > 0 && (
-                  <div className="mt-2 flex gap-1.5">
-                    {o.fotos.slice(0, 3).map((src, i) => (
-                      <img key={i} src={src} alt="" className="h-12 w-12 rounded object-cover" />
-                    ))}
-                  </div>
-                )}
+
               </Card>
             ))}
           </div>

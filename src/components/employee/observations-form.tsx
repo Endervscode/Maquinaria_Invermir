@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -23,15 +22,14 @@ import {
 import { useAuth } from "@/lib/auth/auth-context";
 import { getAll, put } from "@/lib/indexeddb/db";
 import { triggerSync } from "@/lib/sync/sync-manager";
-import { uuid, compressImage } from "@/lib/utils-shift";
+import { uuid } from "@/lib/utils-shift";
 import {
-  OBSERVATION_LABELS,
   type Maquinaria,
   type ObservationCategory,
   type Observacion,
 } from "@/lib/types";
 import { toast } from "sonner";
-import { Camera, X, ImagePlus, FileImage } from "lucide-react";
+import { MessageSquareText, User, Wrench } from "lucide-react";
 
 export function ObservationsForm({
   open,
@@ -49,32 +47,16 @@ export function ObservationsForm({
   const { user } = useAuth();
   const [maquinarias, setMaquinarias] = useState<Maquinaria[]>([]);
   const [maquinariaId, setMaquinariaId] = useState<string>(defaultMaquinariaId || "");
-  const [categoria, setCategoria] = useState<ObservationCategory>("mecanica");
+  const [categoria, setCategoria] = useState<ObservationCategory>("maquinaria");
   const [texto, setTexto] = useState("");
-  const [fotos, setFotos] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // Load machinery list when opening
   useEffect(() => {
     getAll<Maquinaria>("maquinaria").then((m) => setMaquinarias(m));
   }, []);
 
-  async function handleFiles(files: FileList | null) {
-    if (!files) return;
-    const remaining = 3 - fotos.length;
-    const toProcess = Array.from(files).slice(0, remaining);
-    const compressed: string[] = [];
-    for (const f of toProcess) {
-      try {
-        const c = await compressImage(f, 1024, 0.7);
-        compressed.push(c);
-      } catch (e) {
-        toast.error(`Error al procesar ${f.name}`);
-      }
-    }
-    setFotos((prev) => [...prev, ...compressed].slice(0, 3));
-  }
+  const isAboutMachine = categoria === "maquinaria";
 
   async function handleSave() {
     if (!user) return;
@@ -88,13 +70,12 @@ export function ObservationsForm({
     const obs: Observacion = {
       id: uuid(),
       turno_id: turnoId || null,
-      maquinaria_id: maquinariaId || null,
-      maquinaria_serial: machine?.serial,
+      maquinaria_id: isAboutMachine ? (maquinariaId || null) : null,
+      maquinaria_serial: isAboutMachine ? machine?.serial : undefined,
       usuario_id: user.id,
       usuario_nombre: user.nombre,
       categoria,
       texto: texto.trim(),
-      fotos,
       created_at: now,
       updated_at: now,
       synced: false,
@@ -104,7 +85,6 @@ export function ObservationsForm({
     setSaving(false);
     onOpenChange(false);
     setTexto("");
-    setFotos([]);
     toast.success("Observación registrada");
     onSaved?.();
   }
@@ -114,39 +94,65 @@ export function ObservationsForm({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Camera className="text-[#6C5CE7]" size={20} /> Observación de maquinaria
+            <MessageSquareText className="text-[#6C5CE7]" size={20} /> Nueva observación
           </DialogTitle>
           <DialogDescription>
-            Registre una observación técnica. Puede adjuntar hasta 3 fotos (máx 1024×1024, JPEG 70%).
+            Registre una observación sobre la maquinaria o sobre el empleado.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto scroll-thin pr-1">
           <div className="space-y-2">
-            <Label>Maquinaria</Label>
-            <Select value={maquinariaId} onValueChange={setMaquinariaId}>
-              <SelectTrigger><SelectValue placeholder="Seleccione (opcional)" /></SelectTrigger>
-              <SelectContent>
-                {maquinarias.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.serial} · {m.marca} {m.modelo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Tipo de observación</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCategoria("maquinaria")}
+                className={`flex items-center gap-2 rounded-xl border-2 p-3 text-left transition ${
+                  categoria === "maquinaria"
+                    ? "border-[#6C5CE7] bg-[#F5F0FF]"
+                    : "border-slate-200 hover:border-[#6C5CE7]/40"
+                }`}
+              >
+                <Wrench size={18} className={categoria === "maquinaria" ? "text-[#6C5CE7]" : "text-slate-400"} />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Sobre maquinaria</p>
+                  <p className="text-xs text-slate-500">Problemas técnicos, averías, etc.</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategoria("empleado")}
+                className={`flex items-center gap-2 rounded-xl border-2 p-3 text-left transition ${
+                  categoria === "empleado"
+                    ? "border-[#6C5CE7] bg-[#F5F0FF]"
+                    : "border-slate-200 hover:border-[#6C5CE7]/40"
+                }`}
+              >
+                <User size={18} className={categoria === "empleado" ? "text-[#6C5CE7]" : "text-slate-400"} />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Sobre empleado</p>
+                  <p className="text-xs text-slate-500">Condiciones laborales, novedades, etc.</p>
+                </div>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Categoría</Label>
-            <Select value={categoria} onValueChange={(v) => setCategoria(v as ObservationCategory)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(OBSERVATION_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isAboutMachine && (
+            <div className="space-y-2">
+              <Label>Maquinaria (opcional)</Label>
+              <Select value={maquinariaId} onValueChange={setMaquinariaId}>
+                <SelectTrigger><SelectValue placeholder="Seleccione" /></SelectTrigger>
+                <SelectContent>
+                  {maquinarias.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.serial} · {m.marca} {m.modelo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="obs-text">Descripción</Label>
@@ -154,48 +160,9 @@ export function ObservationsForm({
               id="obs-text"
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder="Describa la observación..."
+              placeholder={isAboutMachine ? "Describa el problema o novedad de la maquinaria..." : "Describa la novedad o condición del empleado..."}
               rows={4}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Fotos ({fotos.length}/3)</Label>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              multiple
-              className="hidden"
-              onChange={(e) => handleFiles(e.target.files)}
-            />
-            <div className="grid grid-cols-3 gap-2">
-              {fotos.map((src, i) => (
-                <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200">
-                  <img src={src} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setFotos((p) => p.filter((_, idx) => idx !== i))}
-                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-              {fotos.length < 3 && (
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="grid aspect-square place-items-center rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-[#6C5CE7] hover:text-[#6C5CE7]"
-                >
-                  <ImagePlus size={22} />
-                </button>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 flex items-center gap-1">
-              <FileImage size={12} /> Se comprimen automáticamente a 1024×1024 JPEG 70%.
-            </p>
           </div>
         </div>
 

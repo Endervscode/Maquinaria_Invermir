@@ -5,103 +5,90 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { getAll, put } from "@/lib/indexeddb/db";
 import { triggerSync } from "@/lib/sync/sync-manager";
 import { uuid } from "@/lib/utils-shift";
-import type { Entrada, Maquinaria } from "@/lib/types";
+import type { Entrada, Localidad, Maquinaria } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { PackagePlus, History } from "lucide-react";
+import { MapPin, Truck, History, Send } from "lucide-react";
 import { formatShortDateTime } from "@/hooks/use-clock";
 import { cn } from "@/lib/utils";
 
 export function EntradaTab() {
   const { user } = useAuth();
-  const [razon, setRazon] = useState("");
-  const [serial, setSerial] = useState("");
-  const [descripcion, setDescripcion] = useState("");
-  const [modelo, setModelo] = useState("");
-  const [marca, setMarca] = useState("");
-  const [cantidad, setCantidad] = useState(1);
-  const [saving, setSaving] = useState(false);
+  const [maquinarias, setMaquinarias] = useState<Maquinaria[]>([]);
+  const [localidades, setLocalidades] = useState<Localidad[]>([]);
   const [entradas, setEntradas] = useState<Entrada[]>([]);
-  const [errors, setErrors] = useState<{ razon?: string; serial?: string }>({});
-  const [touched, setTouched] = useState<{ razon?: boolean; serial?: boolean }>({});
+  const [maquinariaId, setMaquinariaId] = useState("");
+  const [localidadId, setLocalidadId] = useState("");
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [nota, setNota] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{ maquinaria?: string; localidad?: string }>({});
+  const [touched, setTouched] = useState<{ maquinaria?: boolean; localidad?: boolean }>({});
 
   const refresh = async () => {
+    setMaquinarias(await getAll<Maquinaria>("maquinaria"));
+    setLocalidades(await getAll<Localidad>("localidades"));
     const all = await getAll<Entrada>("entradas");
     setEntradas(all.sort((a, b) => b.fecha.localeCompare(a.fecha)));
   };
   useEffect(() => { refresh(); }, []);
 
-  function validateField(field: "razon" | "serial", value: string): string | undefined {
-    if (!value.trim()) return field === "razon" ? "La razón es obligatoria" : "El serial es obligatorio";
-    if (value.trim().length < 2) return field === "razon" ? "La razón debe tener al menos 2 caracteres" : "El serial debe tener al menos 2 caracteres";
+  function validateField(field: "maquinaria" | "localidad", value: string): string | undefined {
+    if (!value) return field === "maquinaria" ? "Seleccione una maquinaria" : "Seleccione una localidad";
     return undefined;
   }
 
   function validateForm(): boolean {
-    const razonErr = validateField("razon", razon);
-    const serialErr = validateField("serial", serial);
-    setErrors({ razon: razonErr, serial: serialErr });
-    setTouched({ razon: true, serial: true });
-    return !razonErr && !serialErr;
+    const maqErr = validateField("maquinaria", maquinariaId);
+    const locErr = validateField("localidad", localidadId);
+    setErrors({ maquinaria: maqErr, localidad: locErr });
+    setTouched({ maquinaria: true, localidad: true });
+    return !maqErr && !locErr;
   }
 
-  function handleFieldChange(field: "razon" | "serial", value: string, setter: (v: string) => void) {
-    setter(value);
-    if (touched[field]) {
-      setErrors((prev) => ({ ...prev, [field]: validateField(field, value) }));
-    }
-  }
-
-  const canSubmit = !errors.razon && !errors.serial && razon.trim().length >= 2 && serial.trim().length >= 2;
+  const selectedMachine = maquinarias.find((m) => m.id === maquinariaId);
+  const selectedLocation = localidades.find((l) => l.id === localidadId);
+  const canSubmit = maquinariaId && localidadId;
 
   async function handleSave() {
     if (!user) return;
     if (!validateForm()) return;
     setSaving(true);
     const now = new Date().toISOString();
-    const today = now.slice(0, 10);
+
     const entrada: Entrada = {
       id: uuid(),
-      razon: razon.trim(),
-      serial: serial.trim(),
-      descripcion: descripcion.trim(),
-      modelo: modelo.trim(),
-      marca: marca.trim(),
-      cantidad: Number(cantidad) || 1,
-      fecha: today,
+      maquinaria_id: maquinariaId,
+      maquinaria_serial: selectedMachine!.serial,
+      localidad_id: localidadId,
+      localidad_nombre: selectedLocation!.nombre,
+      fecha,
+      nota: nota.trim() || undefined,
       created_at: now,
       updated_at: now,
       synced: false,
     };
     await put("entradas", entrada);
-
-    // Also create a maquinaria record so the machine shows up in operations
-    const machine: Maquinaria = {
-      id: uuid(),
-      serial: serial.trim(),
-      descripcion: descripcion.trim(),
-      modelo: modelo.trim(),
-      marca: marca.trim(),
-      cantidad: Number(cantidad) || 1,
-      horas_uso: 0,
-      estado: "operativa",
-      localidad_id: null,
-      fecha_entrada: today,
-      fecha_salida: null,
-      created_at: now,
-      updated_at: now,
-      synced: false,
-    };
-    await put("maquinaria", machine);
-
     triggerSync();
     setSaving(false);
-    setRazon(""); setSerial(""); setDescripcion(""); setModelo(""); setMarca(""); setCantidad(1);
-    toast.success("Entrada registrada");
+    setMaquinariaId("");
+    setLocalidadId("");
+    setFecha(new Date().toISOString().slice(0, 10));
+    setNota("");
+    setErrors({});
+    setTouched({});
+    toast.success(`Asignación registrada: ${selectedMachine!.serial} → ${selectedLocation!.nombre}`);
     refresh();
   }
 
@@ -110,72 +97,129 @@ export function EntradaTab() {
       {/* Form */}
       <Card className="p-5 lg:col-span-2">
         <h3 className="mb-1 flex items-center gap-2 text-base font-bold text-slate-900">
-          <PackagePlus size={18} className="text-[#6C5CE7]" /> Nueva entrada de maquinaria
+          <Send size={18} className="text-[#6C5CE7]" /> Asignar maquinaria a ubicación
         </h3>
-        <p className="subtitle-underline text-xs text-slate-500">La fecha se registra automáticamente</p>
+        <p className="subtitle-underline text-xs text-slate-500">
+          Registre dónde irá a trabajar cada máquina
+        </p>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-4">
+          {/* Machine selector */}
           <div className="space-y-1">
-            <Label className={cn(errors.razon && "text-rose-600")}>Razón *</Label>
-            <Input
-              value={razon}
-              onChange={(e) => handleFieldChange("razon", e.target.value, setRazon)}
-              onBlur={(e) => {
-                const val = e.currentTarget.value;
-                setTouched((prev) => ({ ...prev, razon: true }));
-                setErrors((prev) => ({ ...prev, razon: validateField("razon", val) }));
+            <Label className={cn(errors.maquinaria && "text-rose-600")}>
+              <Truck size={14} className="inline mr-1" /> Maquinaria *
+            </Label>
+            <Select
+              value={maquinariaId}
+              onValueChange={(v) => {
+                setMaquinariaId(v);
+                if (touched.maquinaria) setErrors((prev) => ({ ...prev, maquinaria: validateField("maquinaria", v) }));
               }}
-              placeholder="Ej: Compra, devolución..."
-              className={cn(errors.razon && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
-            />
-            {errors.razon && (
+              onOpenChange={(open) => {
+                if (!open && touched.maquinaria) {
+                  setErrors((prev) => ({ ...prev, maquinaria: validateField("maquinaria", maquinariaId) }));
+                }
+                if (open) setTouched((prev) => ({ ...prev, maquinaria: true }));
+              }}
+            >
+              <SelectTrigger
+                className={cn(errors.maquinaria && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+              >
+                <SelectValue placeholder="Seleccione maquinaria" />
+              </SelectTrigger>
+              <SelectContent>
+                {maquinarias.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.serial} · {m.marca} {m.modelo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.maquinaria && (
               <p className="flex items-center gap-1 text-xs text-rose-600">
-                <span>⚠</span> {errors.razon}
+                <span>⚠</span> {errors.maquinaria}
+              </p>
+            )}
+            {selectedMachine && (
+              <p className="text-xs text-slate-400">
+                {selectedMachine.descripcion || `${selectedMachine.marca} ${selectedMachine.modelo}`}
               </p>
             )}
           </div>
+
+          {/* Location selector */}
           <div className="space-y-1">
-            <Label className={cn(errors.serial && "text-rose-600")}>Serial *</Label>
-            <Input
-              value={serial}
-              onChange={(e) => handleFieldChange("serial", e.target.value, setSerial)}
-              onBlur={(e) => {
-                const val = e.currentTarget.value;
-                setTouched((prev) => ({ ...prev, serial: true }));
-                setErrors((prev) => ({ ...prev, serial: validateField("serial", val) }));
+            <Label className={cn(errors.localidad && "text-rose-600")}>
+              <MapPin size={14} className="inline mr-1" /> Ubicación de trabajo *
+            </Label>
+            <Select
+              value={localidadId}
+              onValueChange={(v) => {
+                setLocalidadId(v);
+                if (touched.localidad) setErrors((prev) => ({ ...prev, localidad: validateField("localidad", v) }));
               }}
-              placeholder="Ej: MQ-001"
-              className={cn(errors.serial && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
-            />
-            {errors.serial && (
+              onOpenChange={(open) => {
+                if (!open && touched.localidad) {
+                  setErrors((prev) => ({ ...prev, localidad: validateField("localidad", localidadId) }));
+                }
+                if (open) setTouched((prev) => ({ ...prev, localidad: true }));
+              }}
+            >
+              <SelectTrigger
+                className={cn(errors.localidad && "border-rose-400 ring-rose-200 focus-visible:ring-rose-300")}
+              >
+                <SelectValue placeholder="Seleccione ubicación" />
+              </SelectTrigger>
+              <SelectContent>
+                {localidades.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.localidad && (
               <p className="flex items-center gap-1 text-xs text-rose-600">
-                <span>⚠</span> {errors.serial}
+                <span>⚠</span> {errors.localidad}
               </p>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Marca</Label>
-              <Input value={marca} onChange={(e) => setMarca(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>Modelo</Label>
-              <Input value={modelo} onChange={(e) => setModelo(e.target.value)} />
-            </div>
-          </div>
+
+          {/* Date */}
           <div className="space-y-1">
-            <Label>Cantidad</Label>
-            <Input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
+            <Label>Fecha de asignación</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
+
+          {/* Note */}
           <div className="space-y-1">
-            <Label>Descripción</Label>
-            <Textarea rows={3} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+            <Label>Nota (opcional)</Label>
+            <Textarea
+              rows={2}
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Ej: Trabajará en la extracción de material grueso..."
+            />
           </div>
-          <div className="rounded-lg bg-slate-50 p-2 text-xs text-slate-500">
-            Fecha: <span className="font-semibold">{new Date().toLocaleDateString("es-VE")}</span>
-          </div>
+
+          {/* Summary preview */}
+          {selectedMachine && selectedLocation && (
+            <div className="rounded-lg bg-[#F5F0FF] p-3 text-sm">
+              <p className="font-semibold text-slate-900">Resumen de asignación</p>
+              <p className="mt-1 text-xs text-slate-600">
+                <Truck size={12} className="inline mr-1" /> {selectedMachine.serial}
+              </p>
+              <p className="text-xs text-slate-600">
+                <MapPin size={12} className="inline mr-1" /> {selectedLocation.nombre}
+              </p>
+              <p className="text-xs text-slate-600">
+                📅 {new Date(fecha).toLocaleDateString("es-VE")}
+              </p>
+            </div>
+          )}
+
           <Button onClick={handleSave} disabled={saving || !canSubmit} className="w-full" style={{ background: "#6C5CE7" }}>
-            {saving ? "Guardando..." : "Registrar entrada"}
+            {saving ? "Guardando..." : "Registrar asignación"}
           </Button>
         </div>
       </Card>
@@ -183,23 +227,28 @@ export function EntradaTab() {
       {/* History */}
       <Card className="p-5 lg:col-span-3">
         <h3 className="mb-1 flex items-center gap-2 text-base font-bold text-slate-900">
-          <History size={18} className="text-[#6C5CE7]" /> Entradas registradas
+          <History size={18} className="text-[#6C5CE7]" /> Historial de asignaciones
         </h3>
         <p className="subtitle-underline text-xs text-slate-500">{entradas.length} movimientos</p>
 
         <div className="mt-4 max-h-[60vh] overflow-y-auto scroll-thin">
           {entradas.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No hay entradas registradas</p>
+            <p className="py-8 text-center text-sm text-slate-400">No hay asignaciones registradas</p>
           ) : (
             <div className="space-y-2">
               {entradas.map((e) => (
                 <div key={e.id} className="rounded-lg border border-slate-200 p-3 hover:border-[#6C5CE7]/40">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-900">{e.serial}</p>
-                      <p className="text-xs text-slate-500">{e.marca} {e.modelo} · {e.cantidad} unidad(es)</p>
-                      <p className="mt-1 text-xs text-slate-600">{e.razon}</p>
-                      {e.descripcion && <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{e.descripcion}</p>}
+                      <div className="flex items-center gap-2">
+                        <Truck size={14} className="text-[#6C5CE7]" />
+                        <p className="text-sm font-bold text-slate-900">{e.maquinaria_serial}</p>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <MapPin size={12} className="text-emerald-600" />
+                        <p className="text-xs font-medium text-slate-700">{e.localidad_nombre}</p>
+                      </div>
+                      {e.nota && <p className="mt-1 text-xs text-slate-500 line-clamp-2">{e.nota}</p>}
                     </div>
                     <span className="shrink-0 text-xs text-slate-400">{formatShortDateTime(e.fecha)}</span>
                   </div>

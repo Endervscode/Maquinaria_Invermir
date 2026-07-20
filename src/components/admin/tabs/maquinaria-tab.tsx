@@ -13,9 +13,7 @@ import {
   type MaquinariaEstado,
   type MantenimientoProgramado,
   type Observacion,
-  type ObservationCategory,
   type RegistroAuditoria,
-  OBSERVATION_LABELS,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +44,7 @@ import {
   Pencil,
   Wrench,
   CalendarClock,
-  Camera,
+  MessageSquareText,
   AlertTriangle,
   CheckCircle2,
   Truck,
@@ -749,12 +747,18 @@ function CalendarioPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Observaciones
+// Observaciones (sin fotos, categorías maquinaria/empleado)
 // ---------------------------------------------------------------------------
 function ObservacionesPanel() {
   const [obs, setObs] = useState<Observacion[]>([]);
-  const [filter, setFilter] = useState<ObservationCategory | "all">("all");
+  const [filter, setFilter] = useState<string>("all");
   const [viewing, setViewing] = useState<Observacion | null>(null);
+
+  const CATEGORY_FILTERS: Record<string, string> = {
+    all: "Todas",
+    maquinaria: "Sobre maquinaria",
+    empleado: "Sobre empleado",
+  };
 
   const refresh = async () => {
     const all = await getAll<Observacion>("observaciones");
@@ -769,15 +773,14 @@ function ObservacionesPanel() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
-            <Camera size={18} className="text-[#6C5CE7]" /> Observaciones de maquinaria
+            <MessageSquareText size={18} className="text-[#6C5CE7]" /> Observaciones registradas
           </h3>
           <p className="subtitle-underline text-xs text-slate-500">{obs.length} registradas</p>
         </div>
-        <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
+        <Select value={filter} onValueChange={(v) => setFilter(v)}>
           <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todas las categorías</SelectItem>
-            {Object.entries(OBSERVATION_LABELS).map(([k, v]) => (
+            {Object.entries(CATEGORY_FILTERS).map(([k, v]) => (
               <SelectItem key={k} value={k}>{v}</SelectItem>
             ))}
           </SelectContent>
@@ -795,21 +798,21 @@ function ObservacionesPanel() {
             onClick={() => setViewing(o)}
           >
             <div className="mb-2 flex items-center justify-between">
-              <span className="rounded-full bg-[#F5F0FF] px-2 py-0.5 text-[10px] font-semibold text-[#6C5CE7]">
-                {OBSERVATION_LABELS[o.categoria]}
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{
+                  background: o.categoria === "maquinaria" ? "#F5F0FF" : "#FEF3C7",
+                  color: o.categoria === "maquinaria" ? "#6C5CE7" : "#B45309",
+                }}
+              >
+                {o.categoria === "maquinaria" ? "Sobre maquinaria" : "Sobre empleado"}
               </span>
-              {o.fotos.length > 0 && (
-                <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <Camera size={10} /> {o.fotos.length}
-                </span>
-              )}
             </div>
             <p className="text-sm text-slate-700 line-clamp-3">{o.texto}</p>
             <p className="mt-2 text-xs text-slate-400">
               {o.usuario_nombre} · {formatShortDateTime(o.created_at)}
             </p>
             {o.maquinaria_serial && (
-              <p className="text-xs text-slate-500">{o.maquinaria_serial}</p>
+              <p className="text-xs text-slate-500">Máquina: {o.maquinaria_serial}</p>
             )}
           </div>
         ))}
@@ -819,20 +822,15 @@ function ObservacionesPanel() {
       <Dialog open={!!viewing} onOpenChange={(v) => !v && setViewing(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{viewing && OBSERVATION_LABELS[viewing.categoria]}</DialogTitle>
+            <DialogTitle>
+              {viewing?.categoria === "maquinaria" ? "Observación sobre maquinaria" : "Observación sobre empleado"}
+            </DialogTitle>
             <DialogDescription>
               {viewing?.usuario_nombre} · {viewing && formatShortDateTime(viewing.created_at)}
               {viewing?.maquinaria_serial && ` · ${viewing.maquinaria_serial}`}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-slate-700">{viewing?.texto}</p>
-          {viewing && viewing.fotos.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {viewing.fotos.map((src, i) => (
-                <img key={i} src={src} alt={`Foto ${i + 1}`} className="aspect-square w-full rounded-lg object-cover" />
-              ))}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </Card>

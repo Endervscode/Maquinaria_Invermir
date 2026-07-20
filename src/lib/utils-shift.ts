@@ -61,28 +61,6 @@ export function validateShift(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Compress an image File to base64 JPEG (max 1024x1024, 70% quality)
-// ---------------------------------------------------------------------------
-export async function compressImage(
-  file: File,
-  maxSize = 1024,
-  quality = 0.7
-): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const ratio = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const w = Math.round(bitmap.width * ratio);
-  const h = Math.round(bitmap.height * ratio);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context not available");
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close?.();
-  return canvas.toDataURL("image/jpeg", quality);
-}
-
 export function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
